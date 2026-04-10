@@ -6,6 +6,10 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from torchvision.models.segmentation import (
+    deeplabv3_mobilenet_v3_large,
+    DeepLabV3_MobileNet_V3_Large_Weights,
+)
 
 from dataset import OpenImagesSegmentationDataset
 from model import UNet
@@ -29,6 +33,26 @@ def mask_to_color(mask: np.ndarray) -> np.ndarray:
     return color_mask
 
 
+def normalize_batch(images: torch.Tensor, device: torch.device) -> torch.Tensor:
+    mean = torch.tensor([0.485, 0.456, 0.406], dtype=torch.float32, device=device).view(1, 3, 1, 1)
+    std = torch.tensor([0.229, 0.224, 0.225], dtype=torch.float32, device=device).view(1, 3, 1, 1)
+    return (images - mean) / std
+
+
+def build_deeplab_model(num_classes: int = 4) -> torch.nn.Module:
+    weights = DeepLabV3_MobileNet_V3_Large_Weights.DEFAULT
+    model = deeplabv3_mobilenet_v3_large(weights=weights)
+
+    in_channels = model.classifier[-1].in_channels
+    model.classifier[-1] = torch.nn.Conv2d(in_channels, num_classes, kernel_size=1)
+
+    if model.aux_classifier is not None:
+        aux_in_channels = model.aux_classifier[-1].in_channels
+        model.aux_classifier[-1] = torch.nn.Conv2d(aux_in_channels, num_classes, kernel_size=1)
+
+    return model
+
+
 def main():
     device = torch.device("cpu")
 
@@ -38,9 +62,20 @@ def main():
         augment=False,
     )
 
-    model = UNet(in_channels=3, num_classes=4).to(device)
-    model.load_state_dict(torch.load("models/best_unet.pth", map_location=device))
-    model.eval()
+    # My custom U-Net
+    unet_model = UNet(in_channels=3, num_classes=4).to(device)
+    unet_model.load_state_dict(torch.load("models/best_unet.pth", map_location=device))
+    unet_model.eval()
+
+    # Pretrained DeepLabV3 with fine-tuning
+    deeplab_model = build_deeplab_model(num_classes=4).to(device)
+    deeplab_model.load_state_dict(
+        torch.load(
+            "models/deeplabv3_mobilenet_pretrained/best_deeplabv3_mobilenet.pth",
+            map_location=device,
+        )
+    )
+    deeplab_model.eval()
 
     output_dir = Path("models/prediction_examples")
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -52,32 +87,45 @@ def main():
             image_tensor, true_mask_tensor = dataset[idx]
 
             image_batch = image_tensor.unsqueeze(0).to(device)
-            logits = model(image_batch)
-            pred_mask_tensor = torch.argmax(logits, dim=1).squeeze(0).cpu()
+
+            # U-Net prediction
+            unet_logits = unet_model(image_batch)
+            unet_pred_mask_tensor = torch.argmax(unet_logits, dim=1).squeeze(0).cpu()
+
+            # DeepLab prediction
+            deeplab_input = normalize_batch(image_batch, device)
+            deeplab_outputs = deeplab_model(deeplab_input)
+            deeplab_pred_mask_tensor = torch.argmax(deeplab_outputs["out"], dim=1).squeeze(0).cpu()
 
             image_np = image_tensor.permute(1, 2, 0).cpu().numpy()
             true_mask_np = true_mask_tensor.cpu().numpy()
-            pred_mask_np = pred_mask_tensor.cpu().numpy()
+            unet_pred_mask_np = unet_pred_mask_tensor.cpu().numpy()
+            deeplab_pred_mask_np = deeplab_pred_mask_tensor.cpu().numpy()
 
             true_mask_color = mask_to_color(true_mask_np)
-            pred_mask_color = mask_to_color(pred_mask_np)
+            unet_pred_mask_color = mask_to_color(unet_pred_mask_np)
+            deeplab_pred_mask_color = mask_to_color(deeplab_pred_mask_np)
 
-            fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+            fig, axes = plt.subplots(2, 2, figsize=(10, 10))
 
-            axes[0].imshow(image_np)
-            axes[0].set_title("Original image")
-            axes[0].axis("off")
+            axes[0, 0].imshow(image_np)
+            axes[0, 0].set_title("Original image")
+            axes[0, 0].axis("off")
 
-            axes[1].imshow(true_mask_color)
-            axes[1].set_title("Ground truth mask")
-            axes[1].axis("off")
+            axes[0, 1].imshow(true_mask_color)
+            axes[0, 1].set_title("Ground truth mask")
+            axes[0, 1].axis("off")
 
-            axes[2].imshow(pred_mask_color)
-            axes[2].set_title("Predicted mask")
-            axes[2].axis("off")
+            axes[1, 0].imshow(unet_pred_mask_color)
+            axes[1, 0].set_title("Custom U-Net prediction")
+            axes[1, 0].axis("off")
+
+            axes[1, 1].imshow(deeplab_pred_mask_color)
+            axes[1, 1].set_title("Pretrained DeepLabV3 prediction")
+            axes[1, 1].axis("off")
 
             plt.tight_layout()
-            save_path = output_dir / f"example_{i + 1}.png"
+            save_path = output_dir / f"comparison_{i + 1}.png"
             plt.savefig(save_path, dpi=150)
             plt.close(fig)
 
