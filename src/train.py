@@ -62,10 +62,12 @@ def main():
     train_dataset = OpenImagesSegmentationDataset(
         index_path="data/processed/train_index.json",
         image_size=(256, 256),
+        augment=True,
     )
     val_dataset = OpenImagesSegmentationDataset(
         index_path="data/processed/val_index.json",
         image_size=(256, 256),
+        augment=False,
     )
 
     train_loader = DataLoader(
@@ -83,7 +85,10 @@ def main():
 
     model = UNet(in_channels=3, num_classes=4).to(device)
 
-    criterion = nn.CrossEntropyLoss()
+    # I try to get empirically more penalties for background and car classes
+    class_weights = torch.tensor([0.5, 1.0, 3.0, 3.0], dtype=torch.float32).to(device)
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
+
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
     num_epochs = 6
