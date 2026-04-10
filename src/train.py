@@ -86,12 +86,12 @@ def main():
     model = UNet(in_channels=3, num_classes=4).to(device)
 
     # I try to get empirically more penalties for background and car classes
-    class_weights = torch.tensor([0.5, 1.0, 3.0, 3.0], dtype=torch.float32).to(device)
+    class_weights = torch.tensor([0.5, 1.0, 3.0, 5.0], dtype=torch.float32).to(device)
     criterion = nn.CrossEntropyLoss(weight=class_weights)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
-    num_epochs = 6
+    num_epochs = 15
     best_val_loss = float("inf")
 
     models_dir = Path("models")
