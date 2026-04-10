@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import random
 from pathlib import Path
 from typing import Any
 
@@ -15,9 +16,11 @@ class OpenImagesSegmentationDataset(Dataset):
         self,
         index_path: str | Path,
         image_size: tuple[int, int] = (256, 256),
+        augment: bool = False,
     ) -> None:
         self.index_path = Path(index_path)
         self.image_size = image_size
+        self.augment = augment
 
         with open(self.index_path, "r", encoding="utf-8") as f:
             self.records: list[dict[str, Any]] = json.load(f)
@@ -53,16 +56,21 @@ class OpenImagesSegmentationDataset(Dataset):
             obj_mask = obj_mask > 0
             final_mask[obj_mask] = class_id
 
-        # Resize image
-        image = image.resize(self.image_size, Image.BILINEAR)
-
         # Resize mask with nearest-neighbor to preserve class IDs
         mask_pil = Image.fromarray(final_mask)
+
+        # Add some augmentation: horizontal flip with prob 0.5
+        if self.augment and random.random() < 0.5:
+            image = image.transpose(Image.FLIP_LEFT_RIGHT)
+            mask_pil = mask_pil.transpose(Image.FLIP_LEFT_RIGHT)
+
+        # Resize image
+        image = image.resize(self.image_size, Image.BILINEAR)
         mask_pil = mask_pil.resize(self.image_size, Image.NEAREST)
 
         # Convert to tensors
         image_np = np.array(image, dtype=np.float32) / 255.0
-        image_np = np.transpose(image_np, (2, 0, 1))  # HWC -> CHW
+        image_np = np.transpose(image_np, (2, 0, 1))
 
         mask_np = np.array(mask_pil, dtype=np.int64)
 
