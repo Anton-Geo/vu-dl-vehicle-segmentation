@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import time
 from pathlib import Path
 
 import torch
@@ -28,8 +30,7 @@ def train_one_epoch(model, loader, criterion, optimizer, device):
 
         running_loss += loss.item() * images.size(0)
 
-    epoch_loss = running_loss / len(loader.dataset)
-    return epoch_loss
+    return running_loss / len(loader.dataset)
 
 
 def validate_one_epoch(model, loader, criterion, device):
@@ -46,8 +47,12 @@ def validate_one_epoch(model, loader, criterion, device):
 
             running_loss += loss.item() * images.size(0)
 
-    epoch_loss = running_loss / len(loader.dataset)
-    return epoch_loss
+    return running_loss / len(loader.dataset)
+
+
+def save_history(history: dict, path: Path) -> None:
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(history, f, indent=2)
 
 
 def main():
@@ -58,7 +63,6 @@ def main():
         index_path="data/processed/train_index.json",
         image_size=(256, 256),
     )
-
     val_dataset = OpenImagesSegmentationDataset(
         index_path="data/processed/val_index.json",
         image_size=(256, 256),
@@ -70,7 +74,6 @@ def main():
         shuffle=True,
         num_workers=0,
     )
-
     val_loader = DataLoader(
         val_dataset,
         batch_size=4,
@@ -83,26 +86,43 @@ def main():
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
-    num_epochs = 2
+    num_epochs = 6
     best_val_loss = float("inf")
 
     models_dir = Path("models")
     models_dir.mkdir(parents=True, exist_ok=True)
 
+    history = {
+        "train_loss": [],
+        "val_loss": [],
+        "epoch_time_sec": [],
+    }
+
     for epoch in range(num_epochs):
+        epoch_start = time.time()
+
         train_loss = train_one_epoch(model, train_loader, criterion, optimizer, device)
         val_loss = validate_one_epoch(model, val_loader, criterion, device)
 
+        epoch_time = time.time() - epoch_start
+
+        history["train_loss"].append(train_loss)
+        history["val_loss"].append(val_loss)
+        history["epoch_time_sec"].append(epoch_time)
+
         print(
-            f"Epoch [{epoch + 1}/{num_epochs}] "
-            f"Train Loss: {train_loss:.4f} "
-            f"Val Loss: {val_loss:.4f}"
+            f"Epoch [{epoch + 1}/{num_epochs}] | "
+            f"Train Loss: {train_loss:.4f} | "
+            f"Val Loss: {val_loss:.4f} | "
+            f"Time: {epoch_time:.1f}s"
         )
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             torch.save(model.state_dict(), models_dir / "best_unet.pth")
             print("Saved best model")
+
+        save_history(history, models_dir / "training_history.json")
 
     print("Training finished")
 
