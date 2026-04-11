@@ -116,13 +116,6 @@ Pixel accuracy is computed over all pixels, including background.
 | Bus   | 0.309 | 0.003 | 0.005 |
 | Truck | 0.247 | 0.067 | 0.105 |
 
-| Overall Metric  | Value |
-|-----------------|-------|
-| Pixel Accuracy  | 0.638 |
-| Macro Precision | 0.262 |
-| Macro Recall    | 0.215 |
-| Macro F1        | 0.147 |
-
 ### Pretrained DeepLabV3
 
 | Class | Precision | Recall | F1-score |
@@ -130,13 +123,6 @@ Pixel accuracy is computed over all pixels, including background.
 | Car   | 0.372 | 0.861 | 0.519 |
 | Bus   | 0.533 | 0.862 | 0.659 |
 | Truck | 0.615 | 0.506 | 0.555 |
-
-| Overall Metric  | Value |
-|-----------------|-------|
-| Pixel Accuracy  | 0.712 |
-| Macro Precision | 0.507 |
-| Macro Recall    | 0.743 |
-| Macro F1        | 0.578 |
 
 ---
 
