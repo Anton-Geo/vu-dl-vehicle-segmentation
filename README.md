@@ -54,23 +54,37 @@ flowchart TD
     I --> J[Bottleneck<br/>DoubleConv 256 -> 512]
 
     J --> K[UpConv 512 -> 256]
-    H --> K2[Skip connection]
-    K --> L[Concat + DoubleConv 512 -> 256]
+    H --> L[Concat + DoubleConv 512 -> 256]
+    K --> L
 
     L --> M[UpConv 256 -> 128]
-    F --> M2[Skip connection]
-    M --> N[Concat + DoubleConv 256 -> 128]
+    F --> N[Concat + DoubleConv 256 -> 128]
+    M --> N
 
     N --> O[UpConv 128 -> 64]
-    D --> O2[Skip connection]
-    O --> P[Concat + DoubleConv 128 -> 64]
+    D --> P[Concat + DoubleConv 128 -> 64]
+    O --> P
 
     P --> Q[UpConv 64 -> 32]
-    B --> Q2[Skip connection]
-    Q --> R[Concat + DoubleConv 64 -> 32]
+    B --> R[Concat + DoubleConv 64 -> 32]
+    Q --> R
 
     R --> S[Final 1x1 Conv]
-    S --> T[Output mask logits<br/>4 classes]
+    S --> T[Logits<br/>4 x 256 x 256]
+    T --> U[Argmax]
+    U --> V[Mask<br/>1 x 256 x 256]
+
+    classDef input fill:#f8f9fa,stroke:#333,stroke-width:1px;
+    classDef encoder fill:#cfe2ff,stroke:#333,stroke-width:1px;
+    classDef bottleneck fill:#d9d2e9,stroke:#333,stroke-width:1px;
+    classDef decoder fill:#d9ead3,stroke:#333,stroke-width:1px;
+    classDef output fill:#f4cccc,stroke:#333,stroke-width:1px;
+
+    class A input;
+    class B,C,D,E,F,G,H,I encoder;
+    class J bottleneck;
+    class K,L,M,N,O,P,Q,R decoder;
+    class S,T,U,V output;
 ```
 
 ---
