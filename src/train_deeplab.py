@@ -143,7 +143,7 @@ def main():
     trainable_params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.Adam(trainable_params, lr=1e-3)
 
-    num_epochs = 8
+    num_epochs = 16
     best_val_loss = float("inf")
     best_epoch = -1
 
