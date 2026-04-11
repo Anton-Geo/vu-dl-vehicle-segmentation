@@ -91,10 +91,10 @@ def main():
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
-    num_epochs = 15
+    num_epochs = 16
     best_val_loss = float("inf")
 
-    models_dir = Path("models")
+    models_dir = Path("models/custom_unet")
     models_dir.mkdir(parents=True, exist_ok=True)
 
     history = {

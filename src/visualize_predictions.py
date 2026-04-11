@@ -64,7 +64,10 @@ def main():
 
     # My custom U-Net
     unet_model = UNet(in_channels=3, num_classes=4).to(device)
-    unet_model.load_state_dict(torch.load("models/best_unet.pth", map_location=device))
+    unet_model.load_state_dict(torch.load(
+        "models/custom_unet/best_unet.pth",
+        map_location=device)
+    )
     unet_model.eval()
 
     # Pretrained DeepLabV3 with fine-tuning

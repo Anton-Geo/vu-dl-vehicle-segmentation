@@ -61,7 +61,7 @@ def main():
 
     model = UNet(in_channels=3, num_classes=4).to(device)
 
-    model_path = Path("models/best_unet.pth")
+    model_path = Path("models/custom_unet/best_unet.pth")
     model.load_state_dict(torch.load(model_path, map_location=device))
 
     y_true, y_pred = evaluate_model(model, test_loader, device)
@@ -124,7 +124,7 @@ def main():
         },
     }
 
-    output_path = Path("models/test_metrics.json")
+    output_path = Path("models/custom_unet/test_metrics.json")
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2)
 
