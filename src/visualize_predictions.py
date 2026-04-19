@@ -11,8 +11,8 @@ from torchvision.models.segmentation import (
     DeepLabV3_MobileNet_V3_Large_Weights,
 )
 
-from dataset import OpenImagesSegmentationDataset
-from model import UNet
+from src.dataset import OpenImagesSegmentationDataset
+from src.model import UNet
 
 
 CLASS_COLORS = {
