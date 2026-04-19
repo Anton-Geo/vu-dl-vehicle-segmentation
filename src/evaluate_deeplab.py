@@ -12,7 +12,7 @@ from torchvision.models.segmentation import (
     DeepLabV3_MobileNet_V3_Large_Weights,
 )
 
-from dataset import OpenImagesSegmentationDataset
+from src.dataset import OpenImagesSegmentationDataset
 
 
 CLASS_NAMES = {

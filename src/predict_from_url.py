@@ -13,7 +13,7 @@ from torchvision.models.segmentation import (
     deeplabv3_mobilenet_v3_large,
 )
 
-from model import UNet
+from src.model import UNet
 
 
 CLASS_COLORS = {

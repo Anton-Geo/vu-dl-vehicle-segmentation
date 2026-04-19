@@ -7,10 +7,10 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
 
-from dataset import OpenImagesSegmentationDataset
-from losses import FocalLoss
-from metrics import collect_predictions, compute_segmentation_metrics
-from model import UNet
+from src.dataset import OpenImagesSegmentationDataset
+from src.losses import FocalLoss
+from src.metrics import collect_predictions, compute_segmentation_metrics
+from src.model import UNet
 
 
 def train_one_epoch(model, loader, criterion, optimizer, device):
@@ -97,7 +97,7 @@ def main():
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
-    num_epochs = 20
+    num_epochs = 1
     best_val_f1 = -1.0
     best_epoch = -1
 

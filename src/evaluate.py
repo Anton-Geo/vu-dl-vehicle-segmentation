@@ -6,9 +6,9 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
 
-from dataset import OpenImagesSegmentationDataset
-from metrics import compute_segmentation_metrics, collect_predictions
-from model import UNet
+from src.dataset import OpenImagesSegmentationDataset
+from src.metrics import compute_segmentation_metrics, collect_predictions
+from src.model import UNet
 
 
 CLASS_NAMES = {

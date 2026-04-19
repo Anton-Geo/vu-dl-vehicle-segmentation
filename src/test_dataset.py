@@ -1,4 +1,4 @@
-from dataset import OpenImagesSegmentationDataset
+from src.dataset import OpenImagesSegmentationDataset
 
 
 def main():
