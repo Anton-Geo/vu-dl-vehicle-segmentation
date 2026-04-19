@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy as np
 import torch
-from PIL import Image, ImageEnhance
+from PIL import Image, ImageOps, ImageEnhance
 from torch.utils.data import Dataset
 
 
@@ -66,25 +66,24 @@ class OpenImagesSegmentationDataset(Dataset):
                 image = image.transpose(Image.FLIP_LEFT_RIGHT)
                 mask_pil = mask_pil.transpose(Image.FLIP_LEFT_RIGHT)
 
-            # Small rotation
-            if random.random() < 0.3:
-                angle = random.uniform(-10, 10)
-                image = image.rotate(angle, resample=Image.BILINEAR)
-                mask_pil = mask_pil.rotate(angle, resample=Image.NEAREST)
+            # # Small rotation
+            # if random.random() < 0.3:
+            #     angle = random.uniform(-10, 10)
+            #     image = image.rotate(angle, resample=Image.BILINEAR)
+            #     mask_pil = mask_pil.rotate(angle, resample=Image.NEAREST)
+            #
+            # # Brightness
+            # if random.random() < 0.3:
+            #     factor = random.uniform(0.85, 1.15)
+            #     image = ImageEnhance.Brightness(image).enhance(factor)
+            #
+            # # Contrast
+            # if random.random() < 0.3:
+            #     factor = random.uniform(0.85, 1.15)
+            #     image = ImageEnhance.Contrast(image).enhance(factor)
 
-            # Brightness
-            if random.random() < 0.3:
-                factor = random.uniform(0.85, 1.15)
-                image = ImageEnhance.Brightness(image).enhance(factor)
-
-            # Contrast
-            if random.random() < 0.3:
-                factor = random.uniform(0.85, 1.15)
-                image = ImageEnhance.Contrast(image).enhance(factor)
-
-        # Resize image
-        image = image.resize(self.image_size, Image.BILINEAR)
-        mask_pil = mask_pil.resize(self.image_size, Image.NEAREST)
+        # Resize image (save proportion with padding)
+        image, mask_pil = self._resize_and_pad(image, mask_pil)
 
         # Convert to tensors
         image_np = np.array(image, dtype=np.float32) / 255.0
@@ -96,3 +95,31 @@ class OpenImagesSegmentationDataset(Dataset):
         mask_tensor = torch.tensor(mask_np, dtype=torch.long)
 
         return image_tensor, mask_tensor
+
+    def _resize_and_pad(
+            self,
+            image: Image.Image,
+            mask: Image.Image,
+    ) -> tuple[Image.Image, Image.Image]:
+        target_w, target_h = self.image_size
+        orig_w, orig_h = image.size
+
+        scale = min(target_w / orig_w, target_h / orig_h)
+        new_w = max(1, int(round(orig_w * scale)))
+        new_h = max(1, int(round(orig_h * scale)))
+
+        image = image.resize((new_w, new_h), Image.BILINEAR)
+        mask = mask.resize((new_w, new_h), Image.NEAREST)
+
+        pad_w = target_w - new_w
+        pad_h = target_h - new_h
+
+        left = pad_w // 2
+        right = pad_w - left
+        top = pad_h // 2
+        bottom = pad_h - top
+
+        image = ImageOps.expand(image, border=(left, top, right, bottom), fill=0)
+        mask = ImageOps.expand(mask, border=(left, top, right, bottom), fill=0)
+
+        return image, mask
