@@ -66,21 +66,21 @@ class OpenImagesSegmentationDataset(Dataset):
                 image = image.transpose(Image.FLIP_LEFT_RIGHT)
                 mask_pil = mask_pil.transpose(Image.FLIP_LEFT_RIGHT)
 
-            # Small rotation
-            if random.random() < 0.3:
-                angle = random.uniform(-10, 10)
-                image = image.rotate(angle, resample=Image.BILINEAR)
-                mask_pil = mask_pil.rotate(angle, resample=Image.NEAREST)
-
-            # Brightness
-            if random.random() < 0.3:
-                factor = random.uniform(0.85, 1.15)
-                image = ImageEnhance.Brightness(image).enhance(factor)
-
-            # Contrast
-            if random.random() < 0.3:
-                factor = random.uniform(0.85, 1.15)
-                image = ImageEnhance.Contrast(image).enhance(factor)
+            # # Small rotation
+            # if random.random() < 0.3:
+            #     angle = random.uniform(-10, 10)
+            #     image = image.rotate(angle, resample=Image.BILINEAR)
+            #     mask_pil = mask_pil.rotate(angle, resample=Image.NEAREST)
+            #
+            # # Brightness
+            # if random.random() < 0.3:
+            #     factor = random.uniform(0.85, 1.15)
+            #     image = ImageEnhance.Brightness(image).enhance(factor)
+            #
+            # # Contrast
+            # if random.random() < 0.3:
+            #     factor = random.uniform(0.85, 1.15)
+            #     image = ImageEnhance.Contrast(image).enhance(factor)
 
         # Resize image
         image = image.resize(self.image_size, Image.BILINEAR)
