@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import time
 from pathlib import Path
@@ -11,6 +12,23 @@ from src.dataset import OpenImagesSegmentationDataset
 from src.losses import FocalLoss
 from src.metrics import collect_predictions, compute_segmentation_metrics
 from src.model import UNet
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Train U-Net for segmentation")
+
+    parser.add_argument("--train-index", type=str, required=True)
+    parser.add_argument("--val-index", type=str, required=True)
+    parser.add_argument("--output-dir", type=str, required=True)
+
+    parser.add_argument("--epochs", type=int, default=20)
+    parser.add_argument("--batch-size", type=int, default=8)
+    parser.add_argument("--num-workers", type=int, default=2)
+    parser.add_argument("--lr", type=float, default=1e-3)
+
+    parser.add_argument("--image-size", type=int, nargs=2, default=[256, 256])
+
+    return parser.parse_args()
 
 
 def train_one_epoch(model, loader, criterion, optimizer, device):
@@ -54,68 +72,63 @@ def save_json(data: dict, path: Path) -> None:
 
 
 def main():
+    args = parse_args()
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     train_dataset = OpenImagesSegmentationDataset(
-        index_path="data/processed/train_index.json",
-        image_size=(256, 256),
+        index_path=args.train_index,
+        image_size=tuple(args.image_size),
         augment=True,
     )
     val_dataset = OpenImagesSegmentationDataset(
-        index_path="data/processed/val_index.json",
-        image_size=(256, 256),
+        index_path=args.val_index,
+        image_size=tuple(args.image_size),
         augment=False,
     )
 
     train_loader = DataLoader(
         train_dataset,
-        batch_size=4,
+        batch_size=args.batch_size,
         shuffle=True,
-        num_workers=0,
+        num_workers=args.num_workers,
         pin_memory=torch.cuda.is_available(),
     )
     val_loader = DataLoader(
         val_dataset,
-        batch_size=4,
+        batch_size=args.batch_size,
         shuffle=False,
-        num_workers=0,
+        num_workers=args.num_workers,
         pin_memory=torch.cuda.is_available(),
     )
 
     model = UNet(in_channels=3, num_classes=4).to(device)
 
-    # Global pixel distribution
-    # background: 3040482227 pixels (73.7 %)
-    # car: 802699729 pixels (19.4 %)
-    # bus: 145753989 pixels (3.5 %)
-    # truck: 136332028 pixels (3.3 %)
-
-    alpha = torch.tensor([0.05, 0.20, 1.10, 1.15], dtype=torch.float32)
+    alpha = torch.tensor([0.05, 0.20, 1.10, 1.15], dtype=torch.float32).to(device)
     gamma = 2.0
     criterion = FocalLoss(alpha=alpha, gamma=gamma)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
-    num_epochs = 1
     best_val_f1 = -1.0
     best_epoch = -1
 
-    models_dir = Path("models/custom_unet")
-    models_dir.mkdir(parents=True, exist_ok=True)
-
     config = {
-        "image_size": [256, 256],
-        "batch_size": 4,
-        "num_epochs": num_epochs,
-        "learning_rate": 1e-3,
+        "image_size": args.image_size,
+        "batch_size": args.batch_size,
+        "num_epochs": args.epochs,
+        "learning_rate": args.lr,
         "optimizer": "Adam",
         "loss": "FocalLoss",
         "gamma": gamma,
         "alpha": alpha.tolist(),
         "selection_metric": "val_f1_macro",
     }
-    save_json(config, models_dir / "train_config.json")
+    save_json(config, output_dir / "train_config.json")
 
     history = {
         "train_loss": [],
@@ -129,7 +142,7 @@ def main():
         "best_val_f1_macro": None,
     }
 
-    for epoch in range(num_epochs):
+    for epoch in range(args.epochs):
         epoch_start = time.time()
 
         train_loss = train_one_epoch(model, train_loader, criterion, optimizer, device)
@@ -149,7 +162,7 @@ def main():
         history["epoch_time_sec"].append(epoch_time)
 
         print(
-            f"Epoch [{epoch + 1}/{num_epochs}] | "
+            f"Epoch [{epoch + 1}/{args.epochs}] | "
             f"Train Loss: {train_loss:.4f} | "
             f"Val Loss: {val_loss:.4f} | "
             f"Val Acc: {val_metrics['pixel_accuracy']:.4f} | "
@@ -165,11 +178,11 @@ def main():
             history["best_epoch"] = best_epoch
             history["best_val_f1_macro"] = best_val_f1
 
-            torch.save(model.state_dict(), models_dir / "best_unet.pth")
-            save_json(val_metrics, models_dir / "best_val_metrics.json")
+            torch.save(model.state_dict(), output_dir / "best_unet.pth")
+            save_json(val_metrics, output_dir / "best_val_metrics.json")
             print("Saved best model by macro F1")
 
-        save_json(history, models_dir / "training_history.json")
+        save_json(history, output_dir / "training_history.json")
 
     print("Training finished")
     print(f"Best epoch: {best_epoch}")
