@@ -26,6 +26,9 @@ def parse_args():
     parser.add_argument("--num-workers", type=int, default=2)
     parser.add_argument("--lr", type=float, default=1e-3)
 
+    parser.add_argument("--patience", type=int, default=6)
+    parser.add_argument("--min-delta", type=float, default=1e-4)
+
     parser.add_argument("--image-size", type=int, nargs=2, default=[256, 256])
 
     return parser.parse_args()
@@ -116,6 +119,7 @@ def main():
 
     best_val_f1 = -1.0
     best_epoch = -1
+    epochs_without_improvement = 0
 
     config = {
         "image_size": args.image_size,
@@ -127,16 +131,32 @@ def main():
         "gamma": gamma,
         "alpha": alpha.tolist(),
         "selection_metric": "val_f1_macro",
+        "patience": args.patience,
+        "min_delta": args.min_delta,
     }
     save_json(config, output_dir / "train_config.json")
 
     history = {
         "train_loss": [],
         "val_loss": [],
+
+        "val_car_precision": [],
+        "val_car_recall": [],
+        "val_car_f1": [],
+
+        "val_bus_precision": [],
+        "val_bus_recall": [],
+        "val_bus_f1": [],
+
+        "val_truck_precision": [],
+        "val_truck_recall": [],
+        "val_truck_f1": [],
+
         "val_accuracy": [],
         "val_precision_macro": [],
         "val_recall_macro": [],
         "val_f1_macro": [],
+
         "epoch_time_sec": [],
         "best_epoch": None,
         "best_val_f1_macro": None,
@@ -151,6 +171,10 @@ def main():
         y_true, y_pred = collect_predictions(model, val_loader, device)
         val_metrics = compute_segmentation_metrics(y_true, y_pred)
 
+        car_metrics = val_metrics["per_class"]["car"]
+        bus_metrics = val_metrics["per_class"]["bus"]
+        truck_metrics = val_metrics["per_class"]["truck"]
+
         epoch_time = time.time() - epoch_start
 
         history["train_loss"].append(train_loss)
@@ -161,6 +185,18 @@ def main():
         history["val_f1_macro"].append(val_metrics["f1_macro"])
         history["epoch_time_sec"].append(epoch_time)
 
+        history["val_car_precision"].append(car_metrics["precision"])
+        history["val_car_recall"].append(car_metrics["recall"])
+        history["val_car_f1"].append(car_metrics["f1"])
+
+        history["val_bus_precision"].append(bus_metrics["precision"])
+        history["val_bus_recall"].append(bus_metrics["recall"])
+        history["val_bus_f1"].append(bus_metrics["f1"])
+
+        history["val_truck_precision"].append(truck_metrics["precision"])
+        history["val_truck_recall"].append(truck_metrics["recall"])
+        history["val_truck_f1"].append(truck_metrics["f1"])
+
         print(
             f"Epoch [{epoch + 1}/{args.epochs}] | "
             f"Train Loss: {train_loss:.4f} | "
@@ -169,20 +205,34 @@ def main():
             f"Val Precision: {val_metrics['precision_macro']:.4f} | "
             f"Val Recall: {val_metrics['recall_macro']:.4f} | "
             f"Val F1: {val_metrics['f1_macro']:.4f} | "
+            f"Car F1: {car_metrics['f1']:.4f} | "
+            f"Bus F1: {bus_metrics['f1']:.4f} | "
+            f"Truck F1: {truck_metrics['f1']:.4f} | "
             f"Time: {epoch_time:.1f}s"
         )
 
-        if val_metrics["f1_macro"] > best_val_f1:
-            best_val_f1 = val_metrics["f1_macro"]
+        current_val_f1 = val_metrics["f1_macro"]
+
+        if current_val_f1 > best_val_f1 + args.min_delta:
+            best_val_f1 = current_val_f1
             best_epoch = epoch + 1
+            epochs_without_improvement = 0
+
             history["best_epoch"] = best_epoch
             history["best_val_f1_macro"] = best_val_f1
 
             torch.save(model.state_dict(), output_dir / "best_unet.pth")
             save_json(val_metrics, output_dir / "best_val_metrics.json")
             print("Saved best model by macro F1")
+        else:
+            epochs_without_improvement += 1
+            print(f"No improvement for {epochs_without_improvement} epoch(s)")
 
         save_json(history, output_dir / "training_history.json")
+
+        if epochs_without_improvement >= args.patience:
+            print(f"Early stopping triggered after {epoch + 1} epochs")
+            break
 
     print("Training finished")
     print(f"Best epoch: {best_epoch}")
