@@ -2,6 +2,8 @@ from pathlib import Path
 import pandas as pd
 import json
 import random
+import numpy as np
+from PIL import Image
 
 
 CLASS_MAP = {
@@ -18,7 +20,7 @@ CLASS_NAMES = {
 }
 
 
-def build_index(split: str):
+def build_index(split: str, min_mask_ratio: float = 0.001):
     base = Path("data/openimages/open-images-v7") / split
     images_dir = base / "data"
     masks_dir = base / "labels" / "masks"
@@ -38,16 +40,30 @@ def build_index(split: str):
     print(f"Indexed {len(mask_files)} masks")
 
     records = []
+    skipped_small_masks = 0
 
     for image_id, group in df.groupby("ImageID"):
         image_path = image_files.get(image_id)
         if image_path is None:
             continue
 
+        with Image.open(image_path) as img:
+            img_area = img.size[0] * img.size[1]
+
         objects = []
         for _, row in group.iterrows():
             mask_path = mask_files.get(row["MaskPath"])
             if mask_path is None:
+                continue
+
+            with Image.open(mask_path) as mask_img:
+                mask = np.array(mask_img)
+
+            mask_area = int((mask > 0).sum())
+            ratio = mask_area / img_area
+
+            if ratio < min_mask_ratio:
+                skipped_small_masks += 1
                 continue
 
             class_id = CLASS_MAP[row["LabelName"]]
@@ -57,6 +73,8 @@ def build_index(split: str):
                     "mask_path": str(mask_path),
                     "class_id": class_id,
                     "class_name": CLASS_NAMES[class_id],
+                    "area": mask_area,
+                    "ratio": float(ratio),
                 }
             )
 
@@ -71,6 +89,7 @@ def build_index(split: str):
             }
         )
 
+    print(f"Skipped small masks: {skipped_small_masks}")
     print(f"Collected {len(records)} image records")
     return records
 
@@ -80,7 +99,7 @@ def save_json(data, path):
         json.dump(data, f, indent=2)
 
 
-def split_train_val(records, val_ratio=0.2, seed=42):
+def split_train_val(records, val_ratio=0.1, seed=42):
     random.seed(seed)
     random.shuffle(records)
 
@@ -96,12 +115,12 @@ if __name__ == "__main__":
     output_dir = Path("data/processed")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    train_records = build_index("train")
-    test_records = build_index("validation")
+    train_records = build_index("train", min_mask_ratio=0.001)
+    test_records = build_index("validation", min_mask_ratio=0.001)
 
     train_split, val_split = split_train_val(train_records)
 
-    print(f"\nFinal splits:")
+    print("\nFinal splits:")
     print(f"Train: {len(train_split)}")
     print(f"Val:   {len(val_split)}")
     print(f"Test:  {len(test_records)}")

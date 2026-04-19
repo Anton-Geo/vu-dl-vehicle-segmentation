@@ -13,7 +13,7 @@ def download_dataset():
         split="train",
         label_types=["segmentations"],
         classes=classes,
-        max_samples=1000,
+        max_samples=3000,
     )
 
     print("Downloading test dataset...")
@@ -22,7 +22,7 @@ def download_dataset():
         split="validation",
         label_types=["segmentations"],
         classes=classes,
-        max_samples=100,
+        max_samples=1000,
     )
 
     print("Download complete!")
