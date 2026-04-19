@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy as np
 import torch
-from PIL import Image
+from PIL import Image, ImageEnhance
 from torch.utils.data import Dataset
 
 
@@ -59,10 +59,28 @@ class OpenImagesSegmentationDataset(Dataset):
         # Resize mask with nearest-neighbor to preserve class IDs
         mask_pil = Image.fromarray(final_mask)
 
-        # Add some augmentation: horizontal flip with prob 0.5
-        if self.augment and random.random() < 0.5:
-            image = image.transpose(Image.FLIP_LEFT_RIGHT)
-            mask_pil = mask_pil.transpose(Image.FLIP_LEFT_RIGHT)
+        # Add some augmentation
+        if self.augment:
+            # Horizontal flip
+            if random.random() < 0.5:
+                image = image.transpose(Image.FLIP_LEFT_RIGHT)
+                mask_pil = mask_pil.transpose(Image.FLIP_LEFT_RIGHT)
+
+            # Small rotation
+            if random.random() < 0.3:
+                angle = random.uniform(-10, 10)
+                image = image.rotate(angle, resample=Image.BILINEAR)
+                mask_pil = mask_pil.rotate(angle, resample=Image.NEAREST)
+
+            # Brightness
+            if random.random() < 0.3:
+                factor = random.uniform(0.85, 1.15)
+                image = ImageEnhance.Brightness(image).enhance(factor)
+
+            # Contrast
+            if random.random() < 0.3:
+                factor = random.uniform(0.85, 1.15)
+                image = ImageEnhance.Contrast(image).enhance(factor)
 
         # Resize image
         image = image.resize(self.image_size, Image.BILINEAR)
