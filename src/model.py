@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class DoubleConv(nn.Module):
@@ -28,6 +29,40 @@ class DoubleConv(nn.Module):
         return self.conv2(x)
 
 
+class AttentionGate(nn.Module):
+    def __init__(self, g_channels: int, x_channels: int, inter_channels: int) -> None:
+        super().__init__()
+
+        self.W_g = nn.Sequential(
+            nn.Conv2d(g_channels, inter_channels, kernel_size=1, bias=False),
+            nn.BatchNorm2d(inter_channels),
+        )
+
+        self.W_x = nn.Sequential(
+            nn.Conv2d(x_channels, inter_channels, kernel_size=1, bias=False),
+            nn.BatchNorm2d(inter_channels),
+        )
+
+        self.psi = nn.Sequential(
+            nn.Conv2d(inter_channels, 1, kernel_size=1, bias=True),
+            nn.Sigmoid(),
+        )
+
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, g: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
+        g1 = self.W_g(g)
+        x1 = self.W_x(x)
+
+        if g1.shape[2:] != x1.shape[2:]:
+            g1 = F.interpolate(g1, size=x1.shape[2:], mode="bilinear", align_corners=False)
+
+        psi = self.relu(g1 + x1)
+        psi = self.psi(psi)
+
+        return x * psi
+
+
 class UNet(nn.Module):
     def __init__(self, in_channels: int = 3, num_classes: int = 4) -> None:
         super().__init__()
@@ -46,6 +81,12 @@ class UNet(nn.Module):
 
         self.bottleneck = DoubleConv(256, 512, dropout=0.3)
 
+        # Attention gates
+        self.att4 = AttentionGate(g_channels=256, x_channels=256, inter_channels=128)
+        self.att3 = AttentionGate(g_channels=128, x_channels=128, inter_channels=64)
+        self.att2 = AttentionGate(g_channels=64, x_channels=64, inter_channels=32)
+        self.att1 = AttentionGate(g_channels=32, x_channels=32, inter_channels=16)
+
         self.up4 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2)
         self.dec4 = DoubleConv(512, 256, dropout=0.1)
 
@@ -60,6 +101,18 @@ class UNet(nn.Module):
 
         self.final_conv = nn.Conv2d(32, num_classes, kernel_size=1)
 
+        self._init_weights()
+
+    def _init_weights(self) -> None:
+        for m in self.modules():
+            if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.ones_(m.weight)
+                nn.init.zeros_(m.bias)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         enc1 = self.enc1(x)
         enc2 = self.enc2(self.pool1(enc1))
@@ -69,19 +122,23 @@ class UNet(nn.Module):
         bottleneck = self.bottleneck(self.pool4(enc4))
 
         dec4 = self.up4(bottleneck)
-        dec4 = torch.cat([dec4, enc4], dim=1)
+        enc4_att = self.att4(g=dec4, x=enc4)
+        dec4 = torch.cat([dec4, enc4_att], dim=1)
         dec4 = self.dec4(dec4)
 
         dec3 = self.up3(dec4)
-        dec3 = torch.cat([dec3, enc3], dim=1)
+        enc3_att = self.att3(g=dec3, x=enc3)
+        dec3 = torch.cat([dec3, enc3_att], dim=1)
         dec3 = self.dec3(dec3)
 
         dec2 = self.up2(dec3)
-        dec2 = torch.cat([dec2, enc2], dim=1)
+        enc2_att = self.att2(g=dec2, x=enc2)
+        dec2 = torch.cat([dec2, enc2_att], dim=1)
         dec2 = self.dec2(dec2)
 
         dec1 = self.up1(dec2)
-        dec1 = torch.cat([dec1, enc1], dim=1)
+        enc1_att = self.att1(g=dec1, x=enc1)
+        dec1 = torch.cat([dec1, enc1_att], dim=1)
         dec1 = self.dec1(dec1)
 
         logits = self.final_conv(dec1)
