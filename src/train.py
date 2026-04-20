@@ -46,7 +46,7 @@ def train_one_epoch(model, loader, criterion, optimizer, device):
         logits = model(images)
         loss = criterion(logits, masks)
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
 
         running_loss += loss.item() * images.size(0)

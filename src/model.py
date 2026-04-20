@@ -33,34 +33,26 @@ class AttentionGate(nn.Module):
     def __init__(self, g_channels: int, x_channels: int, inter_channels: int) -> None:
         super().__init__()
 
-        self.W_g = nn.Sequential(
-            nn.Conv2d(g_channels, inter_channels, kernel_size=1, bias=False),
-            nn.BatchNorm2d(inter_channels),
-        )
-
-        self.W_x = nn.Sequential(
-            nn.Conv2d(x_channels, inter_channels, kernel_size=1, bias=False),
-            nn.BatchNorm2d(inter_channels),
-        )
+        self.W_g = nn.Conv2d(g_channels, inter_channels, kernel_size=1, bias=False)
+        self.W_x = nn.Conv2d(x_channels, inter_channels, kernel_size=1, bias=False)
 
         self.psi = nn.Sequential(
+            nn.ReLU(inplace=True),
             nn.Conv2d(inter_channels, 1, kernel_size=1, bias=True),
             nn.Sigmoid(),
         )
 
-        self.relu = nn.ReLU(inplace=True)
-
-    def forward(self, g: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, g, x):
         g1 = self.W_g(g)
         x1 = self.W_x(x)
 
         if g1.shape[2:] != x1.shape[2:]:
             g1 = F.interpolate(g1, size=x1.shape[2:], mode="bilinear", align_corners=False)
 
-        psi = self.relu(g1 + x1)
-        psi = self.psi(psi)
+        psi = self.psi(g1 + x1)
 
-        return x * psi
+        # residual gating: safer than x * psi
+        return x * (1.0 + psi)
 
 
 class UNet(nn.Module):
@@ -81,11 +73,9 @@ class UNet(nn.Module):
 
         self.bottleneck = DoubleConv(256, 512, dropout=0.3)
 
-        # Attention gates
+        # Attention only for deeper skip connections
         self.att4 = AttentionGate(g_channels=256, x_channels=256, inter_channels=128)
         self.att3 = AttentionGate(g_channels=128, x_channels=128, inter_channels=64)
-        self.att2 = AttentionGate(g_channels=64, x_channels=64, inter_channels=32)
-        self.att1 = AttentionGate(g_channels=32, x_channels=32, inter_channels=16)
 
         self.up4 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2)
         self.dec4 = DoubleConv(512, 256, dropout=0.1)
@@ -102,16 +92,6 @@ class UNet(nn.Module):
         self.final_conv = nn.Conv2d(32, num_classes, kernel_size=1)
 
         self._init_weights()
-
-    def _init_weights(self) -> None:
-        for m in self.modules():
-            if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
-                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
-                if m.bias is not None:
-                    nn.init.zeros_(m.bias)
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.ones_(m.weight)
-                nn.init.zeros_(m.bias)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         enc1 = self.enc1(x)
@@ -132,13 +112,11 @@ class UNet(nn.Module):
         dec3 = self.dec3(dec3)
 
         dec2 = self.up2(dec3)
-        enc2_att = self.att2(g=dec2, x=enc2)
-        dec2 = torch.cat([dec2, enc2_att], dim=1)
+        dec2 = torch.cat([dec2, enc2], dim=1)
         dec2 = self.dec2(dec2)
 
         dec1 = self.up1(dec2)
-        enc1_att = self.att1(g=dec1, x=enc1)
-        dec1 = torch.cat([dec1, enc1_att], dim=1)
+        dec1 = torch.cat([dec1, enc1], dim=1)
         dec1 = self.dec1(dec1)
 
         logits = self.final_conv(dec1)
