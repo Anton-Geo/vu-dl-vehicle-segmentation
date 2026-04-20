@@ -53,10 +53,10 @@ class UNet(nn.Module):
         self.dec3 = DoubleConv(512, 256, dropout=0.1)
 
         self.up2 = nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2)
-        self.dec2 = DoubleConv(256, 128, dropout=0.00)
+        self.dec2 = DoubleConv(256, 128, dropout=0.05)
 
         self.up1 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)
-        self.dec1 = DoubleConv(128, 64, dropout=0.00)
+        self.dec1 = DoubleConv(128, 64, dropout=0.0)
 
         self.final_conv = nn.Conv2d(64, num_classes, kernel_size=1)
 
