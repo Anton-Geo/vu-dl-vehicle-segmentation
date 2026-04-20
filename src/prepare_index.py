@@ -99,7 +99,7 @@ def save_json(data, path):
         json.dump(data, f, indent=2)
 
 
-def split_train_val(records, val_ratio=0.1, seed=42):
+def split_train_val(records, val_ratio=0.15, seed=42):
     random.seed(seed)
     random.shuffle(records)
 
