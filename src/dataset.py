@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy as np
 import torch
-from PIL import Image, ImageOps, ImageEnhance
+from PIL import Image, ImageOps, ImageEnhance, ImageFilter
 from torch.utils.data import Dataset
 
 
@@ -66,21 +66,30 @@ class OpenImagesSegmentationDataset(Dataset):
                 image = image.transpose(Image.FLIP_LEFT_RIGHT)
                 mask_pil = mask_pil.transpose(Image.FLIP_LEFT_RIGHT)
 
-            # # Small rotation
-            # if random.random() < 0.3:
-            #     angle = random.uniform(-10, 10)
-            #     image = image.rotate(angle, resample=Image.BILINEAR)
-            #     mask_pil = mask_pil.rotate(angle, resample=Image.NEAREST)
-            #
-            # # Brightness
-            # if random.random() < 0.3:
-            #     factor = random.uniform(0.85, 1.15)
-            #     image = ImageEnhance.Brightness(image).enhance(factor)
-            #
-            # # Contrast
-            # if random.random() < 0.3:
-            #     factor = random.uniform(0.85, 1.15)
-            #     image = ImageEnhance.Contrast(image).enhance(factor)
+            # Small rotation
+            if random.random() < 0.3:
+                angle = random.uniform(-10, 10)
+                image = image.rotate(angle, resample=Image.BILINEAR)
+                mask_pil = mask_pil.rotate(angle, resample=Image.NEAREST)
+
+            # Brightness
+            if random.random() < 0.3:
+                factor = random.uniform(0.85, 1.15)
+                image = ImageEnhance.Brightness(image).enhance(factor)
+
+            # Contrast
+            if random.random() < 0.3:
+                factor = random.uniform(0.85, 1.15)
+                image = ImageEnhance.Contrast(image).enhance(factor)
+
+            # Color saturation
+            if random.random() < 0.3:
+                factor = random.uniform(0.85, 1.15)
+                image = ImageEnhance.Color(image).enhance(factor)
+
+            # Very mild blur
+            if random.random() < 0.15:
+                image = image.filter(ImageFilter.GaussianBlur(radius=random.uniform(0.2, 0.8)))
 
         # Resize image (save proportion with padding)
         image, mask_pil = self._resize_and_pad(image, mask_pil)
