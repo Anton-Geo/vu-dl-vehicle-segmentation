@@ -21,7 +21,8 @@ CLASS_NAMES = {
 
 
 def build_index(split: str, min_mask_ratio: float = 0.001):
-    base = Path("/content/data/data/openimages/open-images-v7") / split
+    # base = Path("/content/data/data/openimages/open-images-v7") / split  # For colab
+    base = Path("./data/openimages/open-images-v7") / split
     images_dir = base / "data"
     masks_dir = base / "labels" / "masks"
     seg_csv = base / "labels" / "segmentations.csv"
