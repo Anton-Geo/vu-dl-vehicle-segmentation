@@ -27,5 +27,9 @@ data/*
 models/*
 !models/.gitkeep
 
+# Experiments
+experiments/*
+!experiments/.gitkeep
+
 # OS
 .DS_Store
