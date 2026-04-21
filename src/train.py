@@ -118,6 +118,15 @@ def main():
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer,
+        mode="min",
+        factor=0.5,
+        patience=2,
+        threshold=1e-3,
+        min_lr=1e-6,
+    )
+
     best_val_f1 = -1.0
     best_epoch = -1
     epochs_without_improvement = 0
@@ -178,6 +187,9 @@ def main():
 
         epoch_time = time.time() - epoch_start
 
+        scheduler.step(val_loss)
+        current_lr = optimizer.param_groups[0]["lr"]
+
         history["train_loss"].append(train_loss)
         history["val_loss"].append(val_loss)
         history["val_accuracy"].append(val_metrics["pixel_accuracy"])
@@ -209,6 +221,7 @@ def main():
             f"Car F1: {car_metrics['f1']:.4f} | "
             f"Bus F1: {bus_metrics['f1']:.4f} | "
             f"Truck F1: {truck_metrics['f1']:.4f} | "
+            f"LR: {current_lr:.6f} | "
             f"Time: {epoch_time:.1f}s"
         )
 
