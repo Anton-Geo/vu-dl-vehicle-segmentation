@@ -9,7 +9,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from src.dataset import OpenImagesSegmentationDataset
-from src.losses import FocalLoss
+from src.losses import ComboLoss
 from src.metrics import collect_predictions, compute_segmentation_metrics
 from src.model import UNet
 
@@ -79,7 +79,6 @@ def main():
     args = parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -112,11 +111,46 @@ def main():
 
     model = UNet(in_channels=3, num_classes=4).to(device)
 
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    param_size = sum(p.numel() * p.element_size() for p in model.parameters())
+    buffer_size = sum(b.numel() * b.element_size() for b in model.buffers())
+    model_size_mb = (param_size + buffer_size) / 1024 ** 2
+
+    print("=" * 50)
+    print("Training Setup")
+    print(f"Device: {device}")
+    print(f"Model: {model.__class__.__name__}")
+    print(f"Input size: (3, {args.image_size[0]}, {args.image_size[1]})")
+    print(f"Total params: {total_params:,}")
+    print(f"Trainable params: {trainable_params:,}")
+    print(f"Approx. model size: {model_size_mb:.2f} MB")
+    print(f"Batch size: {args.batch_size}")
+    print(f"Learning rate: {args.lr}")
+    print(f"Epochs: {args.epochs}")
+    print(f"Patience: {args.patience}")
+    print(f"Min delta: {args.min_delta}")
+    print("=" * 50)
+
     alpha = torch.tensor([0.05, 0.20, 1.10, 1.15], dtype=torch.float32).to(device)
     gamma = 2.0
-    criterion = FocalLoss(alpha=alpha, gamma=gamma)
+    criterion = ComboLoss(
+        alpha=alpha,
+        gamma=gamma,
+        focal_weight=0.7,
+        dice_weight=0.3,
+    )
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer,
+        mode="min",
+        factor=0.6,
+        patience=3,
+        threshold=1e-3,
+        min_lr=1e-5,
+    )
 
     best_val_f1 = -1.0
     best_epoch = -1
@@ -128,9 +162,11 @@ def main():
         "num_epochs": args.epochs,
         "learning_rate": args.lr,
         "optimizer": "Adam",
-        "loss": "FocalLoss",
+        "loss": "ComboLoss",
         "gamma": gamma,
         "alpha": alpha.tolist(),
+        "focal_weight": 0.7,
+        "dice_weight": 0.3,
         "selection_metric": "val_f1_macro",
         "patience": args.patience,
         "min_delta": args.min_delta,
@@ -178,6 +214,9 @@ def main():
 
         epoch_time = time.time() - epoch_start
 
+        scheduler.step(val_loss)
+        current_lr = optimizer.param_groups[0]["lr"]
+
         history["train_loss"].append(train_loss)
         history["val_loss"].append(val_loss)
         history["val_accuracy"].append(val_metrics["pixel_accuracy"])
@@ -209,6 +248,7 @@ def main():
             f"Car F1: {car_metrics['f1']:.4f} | "
             f"Bus F1: {bus_metrics['f1']:.4f} | "
             f"Truck F1: {truck_metrics['f1']:.4f} | "
+            f"LR: {current_lr:.6f} | "
             f"Time: {epoch_time:.1f}s"
         )
 

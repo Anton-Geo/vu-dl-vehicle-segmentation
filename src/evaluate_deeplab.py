@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 
 import numpy as np
 import torch
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from torch.utils.data import DataLoader
 from torchvision.models.segmentation import (
     deeplabv3_mobilenet_v3_large,
@@ -13,14 +13,21 @@ from torchvision.models.segmentation import (
 )
 
 from src.dataset import OpenImagesSegmentationDataset
+from src.metrics import compute_segmentation_metrics
 
 
-CLASS_NAMES = {
-    0: "background",
-    1: "car",
-    2: "bus",
-    3: "truck",
-}
+def parse_args():
+    parser = argparse.ArgumentParser(description="Evaluate DeepLabV3 model")
+
+    parser.add_argument("--test-index", type=str, required=True)
+    parser.add_argument("--model-path", type=str, required=True)
+    parser.add_argument("--output-dir", type=str, required=True)
+
+    parser.add_argument("--batch-size", type=int, default=8)
+    parser.add_argument("--num-workers", type=int, default=2)
+    parser.add_argument("--image-size", type=int, nargs=2, default=[256, 256])
+
+    return parser.parse_args()
 
 
 def normalize_batch(images: torch.Tensor, device: torch.device) -> torch.Tensor:
@@ -43,7 +50,7 @@ def build_model(num_classes: int = 4) -> torch.nn.Module:
     return model
 
 
-def evaluate_model(model, loader, device):
+def collect_predictions_deeplab(model, loader, device):
     model.eval()
 
     all_true = []
@@ -67,86 +74,58 @@ def evaluate_model(model, loader, device):
     return y_true, y_pred
 
 
+def save_json(data: dict, path: Path):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+
 def main():
-    device = torch.device("cpu")
+    args = parse_args()
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     test_dataset = OpenImagesSegmentationDataset(
-        index_path="data/processed/test_index.json",
-        image_size=(256, 256),
+        index_path=args.test_index,
+        image_size=tuple(args.image_size),
         augment=False,
     )
     test_loader = DataLoader(
         test_dataset,
-        batch_size=4,
+        batch_size=args.batch_size,
         shuffle=False,
-        num_workers=0,
+        num_workers=args.num_workers,
+        pin_memory=torch.cuda.is_available(),
     )
 
     model = build_model(num_classes=4).to(device)
-    model_path = Path("models/deeplabv3_mobilenet_pretrained/best_deeplabv3_mobilenet.pth")
+    model_path = Path(args.model_path)
     model.load_state_dict(torch.load(model_path, map_location=device))
 
-    y_true, y_pred = evaluate_model(model, test_loader, device)
-
-    pixel_accuracy = accuracy_score(y_true, y_pred)
-
-    selected_labels = [1, 2, 3]
-    precision, recall, f1, support = precision_recall_fscore_support(
-        y_true,
-        y_pred,
-        labels=selected_labels,
-        average=None,
-        zero_division=0,
-    )
-
-    precision_macro, recall_macro, f1_macro, _ = precision_recall_fscore_support(
-        y_true,
-        y_pred,
-        labels=selected_labels,
-        average="macro",
-        zero_division=0,
-    )
+    y_true, y_pred = collect_predictions_deeplab(model, test_loader, device)
+    results = compute_segmentation_metrics(y_true, y_pred)
 
     print("\n=== Overall Metrics ===")
-    print(f"Pixel Accuracy: {pixel_accuracy:.4f}")
+    print(f"Pixel Accuracy: {results['pixel_accuracy']:.4f}")
+    print(f"Macro Precision: {results['precision_macro']:.4f}")
+    print(f"Macro Recall:    {results['recall_macro']:.4f}")
+    print(f"Macro F1:        {results['f1_macro']:.4f}")
 
     print("\n=== Per-Class Metrics ===")
-    for i, class_id in enumerate(selected_labels):
+    for class_name, metrics in results["per_class"].items():
         print(
-            f"{CLASS_NAMES[class_id]:>5} | "
-            f"Precision: {precision[i]:.4f} | "
-            f"Recall: {recall[i]:.4f} | "
-            f"F1: {f1[i]:.4f} | "
-            f"Support: {support[i]}"
+            f"{class_name:>10} | "
+            f"Precision: {metrics['precision']:.4f} | "
+            f"Recall: {metrics['recall']:.4f} | "
+            f"F1: {metrics['f1']:.4f} | "
+            f"Support: {metrics['support']}"
         )
 
-    print("\n=== Macro Average (car, bus, truck) ===")
-    print(f"Precision: {precision_macro:.4f}")
-    print(f"Recall:    {recall_macro:.4f}")
-    print(f"F1:        {f1_macro:.4f}")
-
-    results = {
-        "pixel_accuracy": float(pixel_accuracy),
-        "per_class": {
-            CLASS_NAMES[class_id]: {
-                "precision": float(precision[i]),
-                "recall": float(recall[i]),
-                "f1": float(f1[i]),
-                "support": int(support[i]),
-            }
-            for i, class_id in enumerate(selected_labels)
-        },
-        "macro_avg_selected_classes": {
-            "precision": float(precision_macro),
-            "recall": float(recall_macro),
-            "f1": float(f1_macro),
-        },
-    }
-
-    output_path = Path("models/deeplabv3_mobilenet_pretrained/test_metrics.json")
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=2)
+    output_path = output_dir / "test_metrics.json"
+    save_json(results, output_path)
 
     print(f"\nSaved metrics to {output_path}")
 

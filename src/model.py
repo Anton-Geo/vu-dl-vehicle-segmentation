@@ -29,53 +29,90 @@ class DoubleConv(nn.Module):
         return self.conv2(x)
 
 
-class AttentionGate(nn.Module):
-    def __init__(self, g_channels: int, x_channels: int, inter_channels: int) -> None:
+class ResidualDoubleConv(nn.Module):
+    def __init__(self, in_channels: int, out_channels: int, dropout: float = 0.0) -> None:
         super().__init__()
 
-        self.W_g = nn.Conv2d(g_channels, inter_channels, kernel_size=1, bias=False)
-        self.W_x = nn.Conv2d(x_channels, inter_channels, kernel_size=1, bias=False)
-
-        self.psi = nn.Sequential(
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, 3, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True),
-            nn.Conv2d(inter_channels, 1, kernel_size=1, bias=True),
-            nn.Sigmoid(),
         )
 
-    def forward(self, g, x):
-        g1 = self.W_g(g)
-        x1 = self.W_x(x)
+        self.dropout = nn.Dropout2d(p=dropout) if dropout > 0 else nn.Identity()
 
-        if g1.shape[2:] != x1.shape[2:]:
-            g1 = F.interpolate(g1, size=x1.shape[2:], mode="bilinear", align_corners=False)
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(out_channels, out_channels, 3, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
+        )
 
-        psi = self.psi(g1 + x1)
+        if in_channels != out_channels:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, bias=False),
+                nn.BatchNorm2d(out_channels),
+            )
+        else:
+            self.shortcut = nn.Identity()
 
-        # residual gating: safer than x * psi
-        return x * (1.0 + psi)
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        residual = self.shortcut(x)
+
+        out = self.conv1(x)
+        out = self.dropout(out)
+        out = self.conv2(out)
+
+        out = out + residual
+        out = self.relu(out)
+        return out
+
+
+# class AttentionGate(nn.Module):
+#     def __init__(self, g_channels: int, x_channels: int, inter_channels: int) -> None:
+#         super().__init__()
+#
+#         self.W_g = nn.Conv2d(g_channels, inter_channels, kernel_size=1, bias=False)
+#         self.W_x = nn.Conv2d(x_channels, inter_channels, kernel_size=1, bias=False)
+#
+#         self.psi = nn.Sequential(
+#             nn.ReLU(inplace=True),
+#             nn.Conv2d(inter_channels, 1, kernel_size=1, bias=True),
+#             nn.Sigmoid(),
+#         )
+#
+#     def forward(self, g: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
+#         g1 = self.W_g(g)
+#         x1 = self.W_x(x)
+#
+#         if g1.shape[2:] != x1.shape[2:]:
+#             g1 = F.interpolate(g1, size=x1.shape[2:], mode="bilinear", align_corners=False)
+#
+#         psi = self.psi(g1 + x1)
+#
+#         return x * psi
 
 
 class UNet(nn.Module):
     def __init__(self, in_channels: int = 3, num_classes: int = 4) -> None:
         super().__init__()
 
-        self.enc1 = DoubleConv(in_channels, 32, dropout=0.0)
+        self.enc1 = ResidualDoubleConv(in_channels, 32, dropout=0.0)
         self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        self.enc2 = DoubleConv(32, 64, dropout=0.0)
+        self.enc2 = ResidualDoubleConv(32, 64, dropout=0.0)
         self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        self.enc3 = DoubleConv(64, 128, dropout=0.0)
+        self.enc3 = ResidualDoubleConv(64, 128, dropout=0.0)
         self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        self.enc4 = DoubleConv(128, 256, dropout=0.1)
+        self.enc4 = ResidualDoubleConv(128, 256, dropout=0.1)
         self.pool4 = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        self.bottleneck = DoubleConv(256, 512, dropout=0.3)
+        self.bottleneck = ResidualDoubleConv(256, 512, dropout=0.3)
 
-        # Attention only for deeper skip connections
-        self.att4 = AttentionGate(g_channels=256, x_channels=256, inter_channels=128)
-        self.att3 = AttentionGate(g_channels=128, x_channels=128, inter_channels=64)
+        # self.att4 = AttentionGate(g_channels=256, x_channels=256, inter_channels=128)
+        # self.att3 = AttentionGate(g_channels=128, x_channels=128, inter_channels=64)
 
         self.up4 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2)
         self.dec4 = DoubleConv(512, 256, dropout=0.1)
@@ -112,13 +149,13 @@ class UNet(nn.Module):
         bottleneck = self.bottleneck(self.pool4(enc4))
 
         dec4 = self.up4(bottleneck)
-        enc4_att = self.att4(g=dec4, x=enc4)
-        dec4 = torch.cat([dec4, enc4_att], dim=1)
+        # enc4_att = self.att4(g=dec4, x=enc4)
+        dec4 = torch.cat([dec4, enc4], dim=1)  # torch.cat([dec4, enc4_att], dim=1)
         dec4 = self.dec4(dec4)
 
         dec3 = self.up3(dec4)
-        enc3_att = self.att3(g=dec3, x=enc3)
-        dec3 = torch.cat([dec3, enc3_att], dim=1)
+        # enc3_att = self.att3(g=dec3, x=enc3)
+        dec3 = torch.cat([dec3, enc3], dim=1)  # torch.cat([dec3, enc3_att], dim=1)
         dec3 = self.dec3(dec3)
 
         dec2 = self.up2(dec3)
