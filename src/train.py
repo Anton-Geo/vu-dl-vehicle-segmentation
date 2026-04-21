@@ -114,14 +114,24 @@ def main():
 
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    param_size = sum(p.numel() * p.element_size() for p in model.parameters())
+    buffer_size = sum(b.numel() * b.element_size() for b in model.buffers())
+    model_size_mb = (param_size + buffer_size) / 1024 ** 2
 
-    print("=" * 40)
-    print("Model Summary")
-    print(f"Model class: {model.__class__.__name__}")
+    print("=" * 50)
+    print("Training Setup")
+    print(f"Device: {device}")
+    print(f"Model: {model.__class__.__name__}")
     print(f"Input size: (3, {args.image_size[0]}, {args.image_size[1]})")
-    print(f"Total parameters: {total_params:,}")
-    print(f"Trainable parameters: {trainable_params:,}")
-    print("=" * 40)
+    print(f"Total params: {total_params:,}")
+    print(f"Trainable params: {trainable_params:,}")
+    print(f"Approx. model size: {model_size_mb:.2f} MB")
+    print(f"Batch size: {args.batch_size}")
+    print(f"Learning rate: {args.lr}")
+    print(f"Epochs: {args.epochs}")
+    print(f"Patience: {args.patience}")
+    print(f"Min delta: {args.min_delta}")
+    print("=" * 50)
 
     alpha = torch.tensor([0.05, 0.20, 1.10, 1.15], dtype=torch.float32).to(device)
     gamma = 2.0
