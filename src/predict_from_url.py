@@ -176,7 +176,7 @@ def main():
     parser.add_argument(
         "--output",
         type=str,
-        default=str(DEFAULT_OUTPUT_DIR / "url_prediction.png"),
+        default=str(DEFAULT_OUTPUT_DIR / "url_prediction_1.png"),
         help="Path to save visualization",
     )
     parser.add_argument("--no-show", action="store_true", help="Do not open matplotlib window")
