@@ -112,6 +112,17 @@ def main():
 
     model = UNet(in_channels=3, num_classes=4).to(device)
 
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+    print("=" * 40)
+    print("Model Summary")
+    print(f"Model class: {model.__class__.__name__}")
+    print(f"Input size: (3, {args.image_size[0]}, {args.image_size[1]})")
+    print(f"Total parameters: {total_params:,}")
+    print(f"Trainable parameters: {trainable_params:,}")
+    print("=" * 40)
+
     alpha = torch.tensor([0.05, 0.20, 1.10, 1.15], dtype=torch.float32).to(device)
     gamma = 2.0
     criterion = ComboLoss(
