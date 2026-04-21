@@ -9,7 +9,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from src.dataset import OpenImagesSegmentationDataset
-from src.losses import FocalLoss
+from src.losses import ComboLoss
 from src.metrics import collect_predictions, compute_segmentation_metrics
 from src.model import UNet
 
@@ -114,7 +114,12 @@ def main():
 
     alpha = torch.tensor([0.05, 0.20, 1.10, 1.15], dtype=torch.float32).to(device)
     gamma = 2.0
-    criterion = FocalLoss(alpha=alpha, gamma=gamma)
+    criterion = ComboLoss(
+        alpha=alpha,
+        gamma=gamma,
+        focal_weight=0.7,
+        dice_weight=0.3,
+    )
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
@@ -137,9 +142,11 @@ def main():
         "num_epochs": args.epochs,
         "learning_rate": args.lr,
         "optimizer": "Adam",
-        "loss": "FocalLoss",
+        "loss": "ComboLoss",
         "gamma": gamma,
         "alpha": alpha.tolist(),
+        "focal_weight": 0.7,
+        "dice_weight": 0.3,
         "selection_metric": "val_f1_macro",
         "patience": args.patience,
         "min_delta": args.min_delta,
