@@ -1,19 +1,19 @@
 # Vehicle Segmentation (Car / Bus / Truck)
 
-Semantic image segmentation project for Deep Learning course.
+Semantic image segmentation project for a Deep Learning course.
 
 The goal is to segment vehicles in images into the following classes:
 
-- 0 - background  
-- 1 - car  
-- 2 - bus  
-- 3 - truck  
+* **0 — background**
+* **1 — car**
+* **2 — bus**
+* **3 — truck**
 
 ---
 
 ## Task
 
-Given an input image, predict a pixel-wise segmentation mask for vehicle classes.
+Given an input image, predict a **pixel-wise segmentation mask** for vehicle classes.
 
 The dataset is based on **OpenImages instance segmentation**.
 
@@ -21,108 +21,148 @@ The dataset is based on **OpenImages instance segmentation**.
 
 ## Dataset
 
-Source: [OpenImages V7](https://storage.googleapis.com/openimages/web/index.html)  
-Classes:
-- Car
-- Bus
-- Truck
+Source: OpenImages V7
+https://storage.googleapis.com/openimages/web/index.html
+
+### Classes:
+
+* Car
+* Bus
+* Truck
 
 ### Data split
 
-- Train: 800 images  
-- Validation: 200 images  
-- Test: 100 images  
+* **Train:** 2550 (~70%)
+* **Validation:** 450 (~13%)
+* **Test:** 602 (~17%)
+
+### Pixel distribution
+
+The dataset is highly imbalanced at the pixel level:
+
+- background: **73.7%**
+- car: **19.6%**
+- bus: **3.4%**
+- truck: **3.3%**
+
+This imbalance makes the task challenging:
+
+- background dominates the loss
+- smaller classes (bus, truck) are harder to learn
+- naive models tend to overpredict background
 
 ---
 
-## Model 1: Custom U-Net
+## Training Environment
 
-A lightweight U-Net was implemented and trained from scratch.
+Training was performed in **Google Colab**:
+
+* GPU: **NVIDIA T4 / L4**
+* Framework: PyTorch
+
+---
+
+## Model 1: Custom Res-U-Net
+
+A custom U-Net variant with residual connections was implemented.
 
 ### Architecture
 
 ```mermaid
-flowchart TD
-    A[Input image 3x256x256] --> B[Encoder block 1<br/>DoubleConv 3 -> 32]
-    B --> C[MaxPool]
-    C --> D[Encoder block 2<br/>DoubleConv 32 -> 64]
-    D --> E[MaxPool]
-    E --> F[Encoder block 3<br/>DoubleConv 64 -> 128]
-    F --> G[MaxPool]
-    G --> H[Encoder block 4<br/>DoubleConv 128 -> 256]
-    H --> I[MaxPool]
-    I --> J[Bottleneck<br/>DoubleConv 256 -> 512]
+flowchart LR
 
-    J --> K[UpConv 512 -> 256]
-    H --> L[Concat + DoubleConv 512 -> 256]
-    K --> L
+    subgraph Encoder
+        E1["ResidualDoubleConv (3→32)"]
+        E2["ResidualDoubleConv (32→64)"]
+        E3["ResidualDoubleConv (64→128)"]
+        E4["ResidualDoubleConv (128→256)\nDropout 0.1"]
+    end
 
-    L --> M[UpConv 256 -> 128]
-    F --> N[Concat + DoubleConv 256 -> 128]
-    M --> N
+    subgraph Bottleneck
+        B["ResidualDoubleConv (256→512)\nDropout 0.3"]
+    end
 
-    N --> O[UpConv 128 -> 64]
-    D --> P[Concat + DoubleConv 128 -> 64]
-    O --> P
+    subgraph Decoder
+        D4["UpConv + DoubleConv (512→256)\nDropout 0.1"]
+        D3["UpConv + DoubleConv (256→128)\nDropout 0.1"]
+        D2["UpConv + DoubleConv (128→64)\nDropout 0.05"]
+        D1["UpConv + DoubleConv (64→32)"]
+    end
 
-    P --> Q[UpConv 64 -> 32]
-    B --> R[Concat + DoubleConv 64 -> 32]
-    Q --> R
+    E1 --> E2 --> E3 --> E4 --> B
+    B --> D4 --> D3 --> D2 --> D1
 
-    R --> S[Final 1x1 Conv]
-    S --> T[Logits<br/>4 x 256 x 256]
-    T --> U[Argmax]
-    U --> V[Mask<br/>1 x 256 x 256]
+    E4 --- D4
+    E3 --- D3
+    E2 --- D2
+    E1 --- D1
 
-    classDef input fill:#f8f9fa,stroke:#333,stroke-width:1px;
-    classDef encoder fill:#cfe2ff,stroke:#333,stroke-width:1px;
-    classDef bottleneck fill:#d9d2e9,stroke:#333,stroke-width:1px;
-    classDef decoder fill:#d9ead3,stroke:#333,stroke-width:1px;
-    classDef output fill:#f4cccc,stroke:#333,stroke-width:1px;
-
-    class A input;
-    class B,C,D,E,F,G,H,I encoder;
-    class J bottleneck;
-    class K,L,M,N,O,P,Q,R decoder;
-    class S,T,U,V output;
+    D1 --> OUT["1x1 Conv → 4 classes"]
 ```
 
+_Notes_:
+
+_The encoder uses residual blocks to improve gradient flow and feature reuse.
+The decoder follows a standard U-Net structure with skip connections.
+Dropout is applied more aggressively in deeper layers._
+
 ---
 
-## Model 2: Pretrained DeepLabV3
+## Training Strategy
 
-A pretrained DeepLabV3-MobileNetV3 model was fine-tuned.
+### Loss
+
+Final model uses **Combo Loss**:
+
+- Focal Loss (0.7)
+- Dice Loss (0.3)
+
+Focal Loss parameters:
+- gamma = 2.0
+- alpha = [0.05, 0.20, 1.10, 1.15]
+
+Focal Loss helps address class imbalance, while Dice Loss improves overlap quality.
+
+### Data augmentation
+
+To improve generalization, the following augmentations were applied:
+
+- horizontal flip
+- random geometric transformations
+- color augmentations
+
+They were applied only to the training set.
+While not always improving validation metrics directly, they help reduce overfitting and improve robustness.
+
+### Early stopping
+
+- Monitored metric: **validation macro F1**
+- Patience: **10**
+- Min delta: **0.0005**
+
+### Learning rate schedule
+
+- Scheduler: **ReduceLROnPlateau**
+- Monitored metric: **validation loss**
+- Factor: **0.6**
+- Patience: **3**
+- Min LR: **1e-5**
 
 ---
 
-## Results
+## Evaluation
 
-Evaluation on 100 unseen test images from OpenImages.  
-Macro metrics are computed over the selected classes (car, bus, truck), excluding background.  
-Pixel accuracy is computed over all pixels, including background.  
+Metrics are computed focusing on the **vehicle classes**: car, bus, truck.
 
-### Overall comparison
+Background pixels are not included in macro-averaged precision, recall, and F1-score,
+which prevents artificially inflated performance due to the dominant background class.
+However, background predictions still contribute to false negatives, making the metrics stricter.
 
-| Model     | Pixel Acc | Car F1 | Bus F1 | Truck F1 | Macro Precision | Macro Recall | Macro F1 |
-|-----------|-----------|--------|--------|----------|-----------------|--------------|----------|
-| U-Net     | 0.638     | 0.330  | 0.005  | 0.105    | 0.262           | 0.215        | 0.147    |
-| DeepLabV3 | 0.712     | 0.519  | 0.659  | 0.555    | 0.507           | 0.743        | 0.578    |
- 
-### Custom U-Net
+Pixel accuracy is computed over all classes.
 
-| Class | Precision | Recall | F1-score |
-|-------|-----------|--------|----------|
-| Car   | 0.231 | 0.577 | 0.330 |
-| Bus   | 0.309 | 0.003 | 0.005 |
-| Truck | 0.247 | 0.067 | 0.105 |
-
-### Pretrained DeepLabV3
-
-| Class | Precision | Recall | F1-score |
-|-------|-----------|--------|----------|
-| Car   | 0.372 | 0.861 | 0.519 |
-| Bus   | 0.533 | 0.862 | 0.659 |
-| Truck | 0.615 | 0.506 | 0.555 |
+Confusion matrices are computed only over vehicle pixels (background excluded) and normalized per class.
+Therefore, values in the confusion matrix may be higher than the corresponding recall values,
+since misclassifications into background are not reflected in the matrix.
 
 ---
 
@@ -142,26 +182,154 @@ python src/predict_from_url.py "IMAGE_URL_OR_PATH"
 
 ---
 
-## Example Prediction
+## Training Evolution (U-Net)
 
-Comparison of ground truth, custom U-Net, and pretrained DeepLabV3 on a test image.
+| #  | Experiment        | Changes                                                   | Macro F1 |
+|----|-------------------|-----------------------------------------------------------|----------|
+| 1  | Baseline          | U-Net + CrossEntropy, small dataset (~1000)               | 0.15     |
+| 3  | Dataset scaling   | + larger dataset (3000 train+val / 602 test) + Focal Loss | 0.41     |
+| 5  | + Padding         | Preserve aspect ratio                                     | 0.34     |
+| 6  | + Model capacity  | Double channels + dropout + 6 augmentations               | 0.35     |
+| 8  | + Class balancing | Revert channels + adjusted alpha weights                  | 0.40     |
+| 11 | + Residual blocks | Res-U-Net encoder                                         | 0.44     |
+| 12 | + LR scheduler    | ReduceLROnPlateau                                         | 0.44     |
+| 13 | + Combo Loss      | Focal (0.7) + Dice (0.3)                                  | **0.52** |
+| 14 | + Attention gates | Attention in skip connections                             | 0.48     |
+| 16 | Final run         | Best architecture - #13 experiment (stability check)      | 0.50     |
 
-![Prediction example](assests/comparison_1.png)
+---
+
+## Model 2: DeepLabV3 (Pretrained)
+
+Model: DeepLabV3-MobileNetV3
+Source: PyTorch torchvision
+
+https://pytorch.org/vision/main/models/generated/torchvision.models.segmentation.deeplabv3_mobilenet_v3_large.html
+
+### Training strategy
+
+* Pretrained on ImageNet
+* Freeze backbone for first **8 epochs**
+* Then full fine-tuning
+
+---
+
+## Training Dynamics
+
+### Res-U-Net (#13)
+
+![U-Net Loss and F1](figures/custom_unet_loss_f1.png)
+
+![U-Net Macro Metrics](figures/custom_unet_loss_macro_metrics.png)
+
+### DeepLabV3
+
+![DeepLab Loss and F1](figures/deeplabv3_loss_f1.png)
+
+![DeepLab Macro Metrics](figures/deeplabv3_loss_macro_metrics.png)
+
+For both models, training loss steadily decreases, while validation loss plateaus after a certain point.
+At the same time, macro F1 continues to improve slightly, indicating that class balance is still being refined even after convergence in loss.
+
+This behavior suggests mild overfitting, but early stopping prevents degradation.
+
+---
+
+## Results (Test set)
+
+### Overall metrics
+
+| Model           | Pixel Acc | Macro Precision | Macro Recall | Macro F1 |
+|-----------------|-----------|-----------------|--------------|----------|
+| U-Net (#3)      | 0.590     | 0.337           | 0.566        | 0.409    |
+| Res-U-Net (#13) | 0.787     | 0.511           | 0.642        | 0.521    |
+| DeepLabV3       | 0.820     | 0.635           | 0.692        | 0.603    |
+
+---
+
+### Per-class metrics
+
+#### Res-U-Net (#13)
+
+| Class | Precision | Recall | F1    |
+|-------|-----------|--------|-------|
+| Car   | 0.302     | 0.897  | 0.452 |
+| Bus   | 0.692     | 0.665  | 0.678 |
+| Truck | 0.539     | 0.363  | 0.434 |
+
+---
+
+#### DeepLabV3
+
+| Class | Precision | Recall | F1    |
+|-------|-----------|--------|-------|
+| Car   | 0.323     | 0.914  | 0.477 |
+| Bus   | 0.849     | 0.724  | 0.782 |
+| Truck | 0.733     | 0.439  | 0.549 |
+
+---
+
+### Confusion Matrices
+
+#### Res-U-Net (#13)
+
+![U-Net Conf Matrix](figures/custom_unet_confusion_matrix_normalized.png)
+
+#### DeepLabV3
+
+![DeepLab Conf Matrix](figures/deeplabv3_confusion_matrix_normalized.png)
+
+---
+
+## Prediction Examples
+
+### Car
+
+![Car](models/prediction_examples/comparison_03_idx_536.png)
+
+### Bus
+
+![Bus](models/prediction_examples/comparison_02_idx_593.png)
+
+### Truck
+
+![Truck](models/prediction_examples/comparison_04_idx_32.png)
+
+### Street scene (multiple vehicles)
+
+![Street](models/prediction_examples_url/url_prediction_1.png)
+
+---
+
+### Discussion
+
+DeepLabV3 outperforms the custom Res-U-Net across all metrics, but the gap is moderate rather than dramatic.
+
+Both models achieve very strong performance on the car class, with recall close to 0.90–0.91 and near-perfect classification among vehicle predictions (96–99% in the confusion matrix).
+
+The main difficulty for both models is the **truck** class. In roughly half of the cases, truck pixels are predicted as cars. This indicates that the class is visually ambiguous at the chosen resolution (256x256) and not clearly separable in many images. Importantly, this issue is present even in the pretrained DeepLabV3 model, suggesting that it is not solely a limitation of the custom architecture.
+
+The largest difference between the models appears in the **bus** class. DeepLabV3 achieves noticeably higher recall (~0.80 vs ~0.70), while Res-U-Net more often confuses buses with trucks. This suggests that pretrained features help capture higher-level structural patterns (e.g., window layout), which are harder to learn from scratch.
+
+Overall, both models show similar error patterns. The primary limitation is not object detection itself, but the ambiguity between vehicle subclasses, combined with class imbalance in the dataset.
+
+---
+
+## Dataset Limitations
+
+The OpenImages segmentation subset contains noticeable annotation noise:
+
+- imprecise object boundaries
+- missing regions
+- inconsistent labeling
+
+These issues negatively affect both training and evaluation and likely underestimate true model performance.
 
 ---
 
 ## Conclusion
 
-Both the custom U-Net and the pretrained DeepLabV3 models demonstrate the ability to perform pixel-wise segmentation of vehicle classes, indicating that the models successfully learned the task at a basic level.
+The experiments show that a carefully designed U-Net architecture can approach the performance of a pretrained model.
 
-However, the pretrained DeepLabV3 model significantly outperforms the custom U-Net across all evaluation metrics. In particular, the macro F1-score improves from 0.147 (U-Net) to 0.578 (DeepLabV3), which highlights the strong impact of transfer learning and pretrained feature representations.
-
-Pixel accuracy is computed over all classes, including background, while macro precision, recall, and F1-score are computed only over the selected classes (car, bus, truck). This choice avoids overly optimistic evaluation results, since the background class dominates the dataset.
-
-It is also important to note that the relatively low performance is not solely due to the limited training set (800 images), but also due to the quality of the ground truth annotations. In many images, not all vehicles are labeled, which introduces noise into both training and evaluation. As a result, correct model predictions may sometimes be penalized as errors.
-
-Additionally, the "truck" class is defined very broadly in the dataset and includes a wide range of vehicles (e.g., heavy trucks, pickup trucks, and special machinery). In the example above, it is clear that the ground true mask is a truck, while the vehicle itself is more similar to a car, as determined by the custom UNet model and also unambiguously by the pretrained DeepLabV3 model. This ambiguity makes the classification task more difficult and contributes to lower precision and recall for this class.
-
-Overall, the results show that while a custom model can learn basic segmentation, pretrained architectures are significantly more effective for this task, especially under conditions of limited data and imperfect annotations.
-
----
+However, pretrained architectures such as DeepLabV3 still provide a clear advantage on more complex classes due to better feature representations and generalization.
+Additionally, an important observation is that the "truck" class remains ambiguous even for a pretrained model, highlighting the impact of dataset quality and class definition on segmentation performance.
