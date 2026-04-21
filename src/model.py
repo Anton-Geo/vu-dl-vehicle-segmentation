@@ -4,12 +4,36 @@ import torch
 import torch.nn as nn
 
 
+class DoubleConv(nn.Module):
+    def __init__(self, in_channels: int, out_channels: int, dropout: float = 0.0) -> None:
+        super().__init__()
+
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, 3, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True)
+        )
+
+        self.dropout = nn.Dropout2d(p=dropout) if dropout > 0 else nn.Identity()
+
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(out_channels, out_channels, 3, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True)
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.conv1(x)
+        x = self.dropout(x)
+        return self.conv2(x)
+
+
 class ResidualDoubleConv(nn.Module):
     def __init__(self, in_channels: int, out_channels: int, dropout: float = 0.0) -> None:
         super().__init__()
 
         self.conv1 = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            nn.Conv2d(in_channels, out_channels, 3, padding=1, bias=False),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True),
         )
@@ -17,12 +41,15 @@ class ResidualDoubleConv(nn.Module):
         self.dropout = nn.Dropout2d(p=dropout) if dropout > 0 else nn.Identity()
 
         self.conv2 = nn.Sequential(
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            nn.Conv2d(out_channels, out_channels, 3, padding=1, bias=False),
             nn.BatchNorm2d(out_channels),
         )
 
         if in_channels != out_channels:
-            self.shortcut = nn.Conv2d(in_channels, out_channels, kernel_size=1, bias=False)
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, bias=False),
+                nn.BatchNorm2d(out_channels),
+            )
         else:
             self.shortcut = nn.Identity()
 
@@ -59,16 +86,16 @@ class UNet(nn.Module):
         self.bottleneck = ResidualDoubleConv(256, 512, dropout=0.3)
 
         self.up4 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2)
-        self.dec4 = ResidualDoubleConv(512, 256, dropout=0.1)
+        self.dec4 = DoubleConv(512, 256, dropout=0.1)
 
         self.up3 = nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2)
-        self.dec3 = ResidualDoubleConv(256, 128, dropout=0.1)
+        self.dec3 = DoubleConv(256, 128, dropout=0.1)
 
         self.up2 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)
-        self.dec2 = ResidualDoubleConv(128, 64, dropout=0.05)
+        self.dec2 = DoubleConv(128, 64, dropout=0.05)
 
         self.up1 = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2)
-        self.dec1 = ResidualDoubleConv(64, 32, dropout=0.0)
+        self.dec1 = DoubleConv(64, 32, dropout=0.0)
 
         self.final_conv = nn.Conv2d(32, num_classes, kernel_size=1)
 
