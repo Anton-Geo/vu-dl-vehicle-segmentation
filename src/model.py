@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class DoubleConv(nn.Module):
@@ -67,6 +68,31 @@ class ResidualDoubleConv(nn.Module):
         return out
 
 
+class AttentionGate(nn.Module):
+    def __init__(self, g_channels: int, x_channels: int, inter_channels: int) -> None:
+        super().__init__()
+
+        self.W_g = nn.Conv2d(g_channels, inter_channels, kernel_size=1, bias=False)
+        self.W_x = nn.Conv2d(x_channels, inter_channels, kernel_size=1, bias=False)
+
+        self.psi = nn.Sequential(
+            nn.ReLU(inplace=True),
+            nn.Conv2d(inter_channels, 1, kernel_size=1, bias=True),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, g: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
+        g1 = self.W_g(g)
+        x1 = self.W_x(x)
+
+        if g1.shape[2:] != x1.shape[2:]:
+            g1 = F.interpolate(g1, size=x1.shape[2:], mode="bilinear", align_corners=False)
+
+        psi = self.psi(g1 + x1)
+
+        return x * psi
+
+
 class UNet(nn.Module):
     def __init__(self, in_channels: int = 3, num_classes: int = 4) -> None:
         super().__init__()
@@ -84,6 +110,9 @@ class UNet(nn.Module):
         self.pool4 = nn.MaxPool2d(kernel_size=2, stride=2)
 
         self.bottleneck = ResidualDoubleConv(256, 512, dropout=0.3)
+
+        self.att4 = AttentionGate(g_channels=256, x_channels=256, inter_channels=128)
+        self.att3 = AttentionGate(g_channels=128, x_channels=128, inter_channels=64)
 
         self.up4 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2)
         self.dec4 = DoubleConv(512, 256, dropout=0.1)
@@ -120,11 +149,13 @@ class UNet(nn.Module):
         bottleneck = self.bottleneck(self.pool4(enc4))
 
         dec4 = self.up4(bottleneck)
-        dec4 = torch.cat([dec4, enc4], dim=1)
+        enc4_att = self.att4(g=dec4, x=enc4)
+        dec4 = torch.cat([dec4, enc4_att], dim=1)
         dec4 = self.dec4(dec4)
 
         dec3 = self.up3(dec4)
-        dec3 = torch.cat([dec3, enc3], dim=1)
+        enc3_att = self.att3(g=dec3, x=enc3)
+        dec3 = torch.cat([dec3, enc3_att], dim=1)
         dec3 = self.dec3(dec3)
 
         dec2 = self.up2(dec3)
