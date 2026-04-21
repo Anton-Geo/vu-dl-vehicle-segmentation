@@ -69,35 +69,46 @@ A custom U-Net variant with residual connections was implemented.
 ### Architecture
 
 ```mermaid
-flowchart LR
-
-    subgraph Encoder
-        E1["ResidualDoubleConv (3→32)"]
-        E2["ResidualDoubleConv (32→64)"]
-        E3["ResidualDoubleConv (64→128)"]
-        E4["ResidualDoubleConv (128→256)\nDropout 0.1"]
+flowchart TD
+    subgraph Left [Encoder]
+        direction TB
+        E1["ResidualDoubleConv<br/>(2x3x3 conv + shortcut)<br/>(3->32)"]
+        E2["ResidualDoubleConv<br/>(2x3x3 conv + shortcut)<br/>(32->64)"]
+        E3["ResidualDoubleConv<br/>(2x3x3 conv + shortcut)<br/>(64->128)"]
+        E4["ResidualDoubleConv<br/>(2x3x3 conv + shortcut)<br/>(128->256)<br/><b>Dropout 0.1</b>"]
     end
 
-    subgraph Bottleneck
-        B["ResidualDoubleConv (256→512)\nDropout 0.3"]
+    subgraph Bottom [Bottleneck]
+        B["ResidualDoubleConv<br/>(2x3x3 conv + shortcut)<br/>(256->512)<br/><b>Dropout 0.3</b>"]
     end
 
-    subgraph Decoder
-        D4["UpConv + DoubleConv (512→256)\nDropout 0.1"]
-        D3["UpConv + DoubleConv (256→128)\nDropout 0.1"]
-        D2["UpConv + DoubleConv (128→64)\nDropout 0.05"]
-        D1["UpConv + DoubleConv (64→32)"]
+    subgraph Right [Decoder]
+        direction BT
+        D1["UpConv 64->32 + concat<br/>DoubleConv (2x3x3 conv)<br/>(64->32)"]
+        D2["UpConv 128->64 + concat<br/>DoubleConv (2x3x3 conv)<br/>(128->64)<br/><b>Dropout 0.05</b>"]
+        D3["UpConv 256->128 + concat<br/>DoubleConv (2x3x3 conv)<br/>(256->128)<br/><b>Dropout 0.1</b>"]
+        D4["UpConv 512->256 + concat<br/>DoubleConv (2x3x3 conv)<br/>(512->256)<br/><b>Dropout 0.1</b>"]
     end
 
     E1 --> E2 --> E3 --> E4 --> B
     B --> D4 --> D3 --> D2 --> D1
 
-    E4 --- D4
-    E3 --- D3
-    E2 --- D2
-    E1 --- D1
+    E4 -.-> D4
+    E3 -.-> D3
+    E2 -.-> D2
+    E1 -.-> D1
 
-    D1 --> OUT["1x1 Conv → 4 classes"]
+    D1 --> OUT["1×1 Conv → 4 classes"]
+
+    classDef encoder fill:#cfe2ff,stroke:#333,stroke-width:1px,color:#000;
+    classDef bottleneck fill:#d9d2e9,stroke:#333,stroke-width:1px,color:#000;
+    classDef decoder fill:#d9ead3,stroke:#333,stroke-width:1px,color:#000;
+    classDef output fill:#f4cccc,stroke:#333,stroke-width:1px,color:#000;
+
+    class E1,E2,E3,E4 encoder;
+    class B bottleneck;
+    class D1,D2,D3,D4 decoder;
+    class OUT output;
 ```
 
 _Notes_:
@@ -271,13 +282,9 @@ This behavior suggests mild overfitting, but early stopping prevents degradation
 
 ### Confusion Matrices
 
-#### Res-U-Net (#13)
-
-![U-Net Conf Matrix](figures/custom_unet_confusion_matrix_normalized.png)
-
-#### DeepLabV3
-
-![DeepLab Conf Matrix](figures/deeplabv3_confusion_matrix_normalized.png)
+| Res-U-Net (#13)                                                           | DeepLabV3                                                                 |
+|---------------------------------------------------------------------------|---------------------------------------------------------------------------|
+| ![U-Net Conf Matrix](figures/custom_unet_confusion_matrix_normalized.png) | ![DeepLab Conf Matrix](figures/deeplabv3_confusion_matrix_normalized.png) |
 
 ---
 
