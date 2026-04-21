@@ -145,9 +145,9 @@ def main():
 
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer,
-        mode="max",
-        factor=0.5,
-        patience=4,
+        mode="min",
+        factor=0.6,
+        patience=3,
         threshold=1e-3,
         min_lr=1e-5,
     )
@@ -214,7 +214,7 @@ def main():
 
         epoch_time = time.time() - epoch_start
 
-        scheduler.step(val_metrics["f1_macro"])
+        scheduler.step(val_loss)
         current_lr = optimizer.param_groups[0]["lr"]
 
         history["train_loss"].append(train_loss)
