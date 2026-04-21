@@ -79,7 +79,6 @@ def main():
     args = parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -148,9 +147,9 @@ def main():
         optimizer,
         mode="min",
         factor=0.5,
-        patience=2,
+        patience=4,
         threshold=1e-3,
-        min_lr=1e-6,
+        min_lr=1e-5,
     )
 
     best_val_f1 = -1.0
@@ -215,7 +214,7 @@ def main():
 
         epoch_time = time.time() - epoch_start
 
-        scheduler.step(val_loss)
+        scheduler.step(val_metrics["f1_macro"])
         current_lr = optimizer.param_groups[0]["lr"]
 
         history["train_loss"].append(train_loss)
